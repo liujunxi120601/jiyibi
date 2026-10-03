@@ -1,0 +1,17 @@
+# Gradle
+.gradle/
+build/
+app/build/
+
+# Android Studio
+local.properties
+.idea/
+*.iml
+
+# Keystore（签名密钥不要提交）
+*.keystore
+*.jks
+
+# OS
+.DS_Store
+Thumbs.db
