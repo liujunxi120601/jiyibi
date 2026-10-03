@@ -1,6 +1,5 @@
 package com.jiyibi.app.ui.home
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,15 +12,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -41,7 +40,7 @@ import com.jiyibi.app.data.Transaction
 import com.jiyibi.app.data.TransactionType
 import com.jiyibi.app.data.findCategory
 import com.jiyibi.app.ui.TransactionViewModel
-import com.jiyibi.app.ui.components.formatDateShort
+import com.jiyibi.app.ui.components.TransactionRow
 import com.jiyibi.app.ui.components.formatMoney
 import com.jiyibi.app.ui.theme.ExpenseRed
 import com.jiyibi.app.ui.theme.IncomeGreen
@@ -49,11 +48,22 @@ import com.jiyibi.app.ui.theme.IncomeGreen
 @Composable
 fun HomeScreen(
     vm: TransactionViewModel,
+    onSearch: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val summary by vm.monthSummary.collectAsState()
     val transactions by vm.monthTransactions.collectAsState()
+    val budgets by vm.budgets.collectAsState()
+    val customCategories by vm.customCategories.collectAsState()
     var toDelete by remember { mutableStateOf<Transaction?>(null) }
+
+    // 本月各分类已花费（预算进度用）
+    val spentByCategory = remember(transactions) {
+        transactions
+            .filter { it.type == TransactionType.EXPENSE.name }
+            .groupBy { it.categoryKey }
+            .mapValues { (_, list) -> list.sumOf { it.amount } }
+    }
 
     Column(
         modifier = modifier
@@ -61,6 +71,22 @@ fun HomeScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // 标题栏 + 搜索入口
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("记一笔", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = onSearch) {
+                Icon(
+                    Icons.Filled.Search,
+                    contentDescription = "搜索",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
         // 本月收支概览卡片
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -98,6 +124,55 @@ fun HomeScreen(
             }
         }
 
+        // 预算进度（仅当设置了预算时显示）
+        if (budgets.isNotEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text("本月预算", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    budgets.forEach { budget ->
+                        val category = findCategory(budget.categoryKey, customCategories)
+                        val spent = spentByCategory[budget.categoryKey] ?: 0.0
+                        val progress = (spent / budget.amount).toFloat().coerceIn(0f, 1f)
+                        val over = spent > budget.amount
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                Text(category.label, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                Spacer(Modifier.weight(1f))
+                                Text(
+                                    "${formatMoney(spent)} / ${formatMoney(budget.amount)}",
+                                    fontSize = 13.sp,
+                                    color = if (over) ExpenseRed else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            LinearProgressIndicator(
+                                progress = { progress },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(8.dp)
+                                    .clip(RoundedCornerShape(4.dp)),
+                                color = if (over) ExpenseRed else category.color,
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                            )
+                            if (over) {
+                                Text(
+                                    "已超支 ${formatMoney(spent - budget.amount)}",
+                                    fontSize = 12.sp,
+                                    color = ExpenseRed
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Text("最近记录", fontSize = 18.sp, fontWeight = FontWeight.Bold)
 
         if (transactions.isEmpty()) {
@@ -117,6 +192,7 @@ fun HomeScreen(
                 items(transactions.take(30), key = { it.id }) { t ->
                     TransactionRow(
                         transaction = t,
+                        customCategories = customCategories,
                         onDelete = { toDelete = t }
                     )
                 }
@@ -125,7 +201,7 @@ fun HomeScreen(
     }
 
     toDelete?.let { t ->
-        val cat = findCategory(t.categoryKey)
+        val cat = findCategory(t.categoryKey, customCategories)
         AlertDialog(
             onDismissRequest = { toDelete = null },
             title = { Text("删除这条记录？") },
@@ -139,67 +215,5 @@ fun HomeScreen(
                 TextButton(onClick = { toDelete = null }) { Text("取消") }
             }
         )
-    }
-}
-
-@Composable
-private fun TransactionRow(
-    transaction: Transaction,
-    onDelete: () -> Unit
-) {
-    val category = findCategory(transaction.categoryKey)
-    val isIncome = transaction.type == TransactionType.INCOME.name
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(category.color.copy(alpha = 0.18f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = category.icon,
-                    contentDescription = category.label,
-                    tint = category.color,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 12.dp)
-            ) {
-                Text(category.label, fontWeight = FontWeight.Medium)
-                Text(
-                    text = if (transaction.note.isNotBlank()) transaction.note
-                           else formatDateShort(transaction.timestamp),
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Text(
-                text = (if (isIncome) "+" else "-") + formatMoney(transaction.amount).removePrefix("¥").let { "¥$it" },
-                fontWeight = FontWeight.Bold,
-                fontSize = 17.sp,
-                color = if (isIncome) IncomeGreen else ExpenseRed
-            )
-            IconButton(onClick = onDelete) {
-                Icon(
-                    Icons.Filled.Delete,
-                    contentDescription = "删除",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                )
-            }
-        }
     }
 }

@@ -15,3 +15,6 @@ local.properties
 # OS
 .DS_Store
 Thumbs.db
+
+# Kotlin 编译错误日志
+.kotlin/

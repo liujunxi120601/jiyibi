@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">记一笔</string>
+    <string name="widget_desc">一键快速记账：早餐、午餐、交通、奶茶</string>
 </resources>

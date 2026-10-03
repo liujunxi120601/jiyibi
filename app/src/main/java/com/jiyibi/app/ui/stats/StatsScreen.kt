@@ -46,13 +46,14 @@ fun StatsScreen(vm: TransactionViewModel) {
     val monthOffset by vm.monthOffset.collectAsState()
     val monthTransactions by vm.monthTransactions.collectAsState()
     val allTransactions by vm.allTransactions.collectAsState()
+    val customCategories by vm.customCategories.collectAsState()
 
     // 本月支出按分类汇总（饼图用）
-    val expenseByCategory = remember(monthTransactions) {
+    val expenseByCategory = remember(monthTransactions, customCategories) {
         monthTransactions
             .filter { it.type == TransactionType.EXPENSE.name }
             .groupBy { it.categoryKey }
-            .map { (key, list) -> findCategory(key) to list.sumOf { it.amount } }
+            .map { (key, list) -> findCategory(key, customCategories) to list.sumOf { it.amount } }
             .sortedByDescending { it.second }
     }
     val expenseTotal = expenseByCategory.sumOf { it.second }
